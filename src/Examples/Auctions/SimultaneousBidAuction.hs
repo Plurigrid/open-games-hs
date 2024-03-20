@@ -6,11 +6,17 @@
 {-# LANGUAGE QuasiQuotes #-}
 
 
-module Examples.Auctions.SimultaneousBidAuction where
+module Examples.Auctions.SimultaneousBidAuction
+  ( bidding2ReservePrice
+  , bidding2
+  , bidding2ExposeWinningBid
+  , truthfulStrat
+  , values)
+  where
 
 
-import Engine.Engine
-import Preprocessor.Preprocessor
+import OpenGames.Engine.Engine
+import OpenGames.Preprocessor
 import Examples.Auctions.AuctionSupportFunctions
 
 ----------
@@ -22,6 +28,7 @@ import Examples.Auctions.AuctionSupportFunctions
 
 type Values = Double 
 
+values :: [Values]
 values = [0,20..100]
 
 reservePriceParameter :: Double
@@ -31,7 +38,7 @@ reservePriceParameter = 1
 -- 1 The actual games
 
 -- Draws a value and creates a pair of _value_ _name_
-natureDrawsTypeStage name = [opengame|
+natureDrawsTypeStage name valueSpace = [opengame|
 
     inputs    :   ;
     feedback  :   ;
@@ -39,7 +46,7 @@ natureDrawsTypeStage name = [opengame|
     :-----:
     inputs    :   ;
     feedback  :   ;
-    operation : nature (uniformDist values) ;
+    operation : nature (uniformDist valueSpace) ;
     outputs   : value ;
     returns   :  ;
     :-----:
@@ -49,7 +56,7 @@ natureDrawsTypeStage name = [opengame|
   |]
 
 -- Individual bidding stage
-biddingStage name = [opengame|
+biddingStage name actionSpace = [opengame|
 
     inputs    :  nameValuePair  ;
     feedback  :   ;
@@ -57,7 +64,7 @@ biddingStage name = [opengame|
     :---------------------------:
     inputs    :  nameValuePair  ;
     feedback  :   ;
-    operation :  dependentDecision name (const [0,20..100]) ;
+    operation :  dependentDecision name (const actionSpace) ;
     outputs   :  bid ;
     returns   :  setPayoff nameValuePair payments  ;
     :---------------------------:
@@ -87,7 +94,7 @@ transformPaymentsReservePrice kPrice kSlots = [opengame|
 
 
 
-bidding2ReservePrice kPrice kSlots = [opengame| 
+bidding2ReservePrice kPrice kSlots  valueSpace1 valueSpace2 actionSpace1 actionSpace2 = [opengame| 
 
    inputs    : reservePrice    ;
    feedback  :      ;
@@ -95,25 +102,25 @@ bidding2ReservePrice kPrice kSlots = [opengame|
    :-----------------:
    inputs    :      ;
    feedback  :      ;
-   operation : natureDrawsTypeStage "Alice" ;
+   operation : natureDrawsTypeStage "Alice" valueSpace1 ;
    outputs   :  aliceValue ;
    returns   :      ;
 
    inputs    :      ;
    feedback  :      ;
-   operation : natureDrawsTypeStage "Bob" ;
+   operation : natureDrawsTypeStage "Bob" valueSpace2;
    outputs   :  bobValue ;
    returns   :      ;
 
    inputs    :  aliceValue    ;
    feedback  :      ;
-   operation :  biddingStage "Alice" ;
+   operation :  biddingStage "Alice" actionSpace1 ;
    outputs   :  aliceDec ;
    returns   :  payments  ;
 
    inputs    :  bobValue    ;
    feedback  :      ;
-   operation :  biddingStage "Bob" ;
+   operation :  biddingStage "Bob" actionSpace2 ;
    outputs   :  bobDec ;
    returns   :  payments  ;
 
@@ -150,7 +157,7 @@ transformPayments kPrice kSlots reservePrice = [opengame|
 
 
 -- Instantiates a simplified version with two players
-bidding2 kPrice kSlots reservePrice  = [opengame| 
+bidding2 kPrice kSlots reservePrice valueSpace1 valueSpace2 actionSpace1 actionSpace2  = [opengame| 
 
    inputs    :      ;
    feedback  :      ;
@@ -158,25 +165,25 @@ bidding2 kPrice kSlots reservePrice  = [opengame|
    :-----------------:
    inputs    :      ;
    feedback  :      ;
-   operation : natureDrawsTypeStage "Alice" ;
+   operation : natureDrawsTypeStage "Alice" valueSpace1 ;
    outputs   :  aliceValue ;
    returns   :      ;
 
    inputs    :      ;
    feedback  :      ;
-   operation : natureDrawsTypeStage "Bob" ;
+   operation : natureDrawsTypeStage "Bob" valueSpace2 ;
    outputs   :  bobValue ;
    returns   :      ;
 
    inputs    :  aliceValue    ;
    feedback  :      ;
-   operation :  biddingStage "Alice" ;
+   operation :  biddingStage "Alice" actionSpace1 ;
    outputs   :  aliceDec ;
    returns   :  payments  ;
 
    inputs    :  bobValue    ;
    feedback  :      ;
-   operation :  biddingStage "Bob" ;
+   operation :  biddingStage "Bob" actionSpace2 ;
    outputs   :  bobDec ;
    returns   :  payments  ;
 
@@ -192,6 +199,56 @@ bidding2 kPrice kSlots reservePrice  = [opengame|
    |]
 
 
+ -- Instantiates a simplified version with two players and expose winning bid
+bidding2ExposeWinningBid name1 name2 kPrice kSlots reservePrice valueSpace1 valueSpace2 actionSpace1 actionSpace2  = [opengame|
+
+   inputs    :      ;
+   feedback  :      ;
+
+   :-----------------:
+   inputs    :      ;
+   feedback  :      ;
+   operation : natureDrawsTypeStage name1 valueSpace1 ;
+   outputs   :  aliceValue ;
+   returns   :      ;
+
+   inputs    :      ;
+   feedback  :      ;
+   operation : natureDrawsTypeStage name2 valueSpace2 ;
+   outputs   :  bobValue ;
+   returns   :      ;
+
+   inputs    :  aliceValue    ;
+   feedback  :      ;
+   operation :  biddingStage name1 actionSpace1 ;
+   outputs   :  aliceDec ;
+   returns   :  payments  ;
+
+   inputs    :  bobValue    ;
+   feedback  :      ;
+   operation :  biddingStage name2 actionSpace2 ;
+   outputs   :  bobDec ;
+   returns   :  payments  ;
+
+   inputs    :  [(name1,aliceDec),(name2,bobDec)]  ;
+   feedback  :      ;
+   operation :   transformPayments kPrice kSlots reservePrice ;
+   outputs   :  payments ;
+   returns   :      ;
+
+   inputs    :  payments  ;
+   feedback  :      ;
+   operation : forwardFunction $ extractWinningBid ;
+   outputs   : (winner,price) ;
+   returns   :      ;
+
+   :-----------------:
+
+   outputs   : (winner,price)  ;
+   returns   :      ;
+   |]
+
+ 
 
   
 -- B Analysis
@@ -227,15 +284,15 @@ constBiddingStrat x y =
 ---------------
 -- 1 Equilibria
 -- 1.0 Eq. game with 3 players
-equilibriumGame kPrice kSlots reservePrice strat = evaluate (bidding2 kPrice kSlots reservePrice) strat void
+equilibriumGame kPrice kSlots reservePrice valueSpace1 valueSpace2 actionSpace1 actionSpace2 strat = evaluate (bidding2 kPrice kSlots reservePrice valueSpace1 valueSpace2 actionSpace1 actionSpace2) strat void
 
 
 ------------------------
 -- 2 Interactive session
 
 -- One object being auctioned off Once we exclude slots via lottery, and just auction off one slot, truthful bidding becomes an equilibrium
--- generateIsEq $ equilibriumGame 2 1 reservePriceParameter truthfulStrat
+-- generateIsEq $ equilibriumGame 2 1 reservePriceParameter values values values values truthfulStrat
 
 -- Not an equilibrium
--- generateIsEq $ equilibriumGame 2 1 reservePriceParameter (constBiddingStrat 30 30)
+-- generateIsEq $ equilibriumGame 2 1 reservePriceParameter values values values values (constBiddingStrat 30 30)
 
